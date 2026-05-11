@@ -5,5 +5,7 @@
 !/my_python_version
 /my_python_version/data
 
+!/requirements.txt
+
 !/src
 
