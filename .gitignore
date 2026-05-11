@@ -1,11 +1,7 @@
-/*
+/models
 
-!/.gitignore
+/data
 
-!/my_python_version
-/my_python_version/data
+/.venv
 
-!/requirements.txt
-
-!/src
 

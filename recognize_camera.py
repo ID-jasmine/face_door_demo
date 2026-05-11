@@ -1,9 +1,11 @@
 import cv2
 import numpy as np
-import time
 
-YUNET_MODEL = "../models/face_detection_yunet_2023mar.onnx"
-SFACE_MODEL = "../models/face_recognition_sface_2021dec.onnx"
+from src.access_controller import AccessController
+from src.access_logger import AccessLogger
+
+YUNET_MODEL = "models/face_detection_yunet_2023mar.onnx"
+SFACE_MODEL = "models/face_recognition_sface_2021dec.onnx"
 FACE_DB_PATH = "data/embeddings/me.npy"
 
 CAMERA_ID = 0
@@ -27,10 +29,6 @@ def cosine_similarity(a, b):
     return float(np.dot(a, b) / (norm_a * norm_b))
 
 
-def mock_open_door(name, score):
-    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] OPEN DOOR: {name}, score={score:.3f}")
-
-
 def main():
     known_embedding = np.load(FACE_DB_PATH)
 
@@ -48,6 +46,9 @@ def main():
         ""
     )
 
+    access_controller = AccessController(open_duration=0.5, cooldown=3.0)
+    access_logger = AccessLogger("data/logs/access.log")
+
     cap = cv2.VideoCapture(CAMERA_ID)
 
     if not cap.isOpened():
@@ -56,9 +57,6 @@ def main():
 
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, INPUT_SIZE[0])
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, INPUT_SIZE[1])
-
-    last_open_time = 0
-    open_interval = 3.0
 
     print("Camera opened.")
     print("Click the image window, then press q or ESC to quit.")
@@ -90,17 +88,22 @@ def main():
 
                 if score >= THRESHOLD:
                     name = "me"
+                    authorized = True
                     text = f"Authorized: {name} {score:.2f}"
                     color = (0, 255, 0)
 
-                    now = time.time()
-                    if now - last_open_time > open_interval:
-                        mock_open_door(name, score)
-                        last_open_time = now
+                    opened = access_controller.open_door(name, score)
+
+                    if opened:
+                        access_logger.write(name, score, authorized=True)
 
                 else:
+                    name = "unknown"
+                    authorized = False
                     text = f"Unknown {score:.2f}"
                     color = (0, 0, 255)
+
+                    access_logger.write(name, score, authorized=False)
 
                 cv2.rectangle(frame, (x, y), (x + fw, y + fh), color, 2)
                 cv2.putText(
