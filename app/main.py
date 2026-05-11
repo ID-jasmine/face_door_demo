@@ -8,6 +8,7 @@ import cv2
 
 from src.camera import Camera
 from src.face_detector import FaceDetector
+from src.face_recognizer import FaceRecognizer
 
 YUNET_MODEL = os.path.join(
     PROJECT_ROOT,
@@ -15,8 +16,18 @@ YUNET_MODEL = os.path.join(
     "face_detection_yunet_2023mar.onnx"
 )
 
+SFACE_MODEL = os.path.join(
+    PROJECT_ROOT,
+    "models",
+    "face_recognition_sface_2021dec.onnx"
+)
+
 def main():
     camera = Camera(camera_id=0, width=640, height=480)
+
+    recognizer = FaceRecognizer(
+        model_path=SFACE_MODEL
+    )
 
     detector = FaceDetector(
         model_path=YUNET_MODEL,
@@ -43,6 +54,11 @@ def main():
         
         faces = detector.detect(frame)
         frame = detector.draw_faces(frame, faces)
+
+        for face in faces:
+            embedding = recognizer.extract(frame, face)
+            print("Embedding shape:", embedding.shape)
+            break
         
         cv2.imshow("camera module test", frame)
 
