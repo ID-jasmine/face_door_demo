@@ -1,7 +1,6 @@
 from flask import Flask, jsonify
 import threading
 
-
 class HttpServer:
     def __init__(self, status_store, host="0.0.0.0", port=8000):
         self.status_store = status_store

@@ -119,19 +119,6 @@ def main():
                         authorized=True
                     )
                     status_store.set_door_state("closed")
-
-            if result.authorized:
-                opened = access_controller.open_door(
-                    result.name,
-                    result.score
-                )
-
-                if opened:
-                    access_logger.write(
-                        result.name,
-                        result.score,
-                        authorized=True
-                    )
             else:
                 access_logger.write(
                     result.name,
