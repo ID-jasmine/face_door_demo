@@ -9,6 +9,11 @@ import cv2
 from src.camera import Camera
 from src.face_detector import FaceDetector
 from src.face_recognizer import FaceRecognizer
+from src.face_database import FaceDatabase
+from src.access_controller import AccessController
+from src.access_logger import AccessLogger
+from src.status_store import StatusStore
+from src.http_server import HttpServer
 
 YUNET_MODEL = os.path.join(
     PROJECT_ROOT,
@@ -22,8 +27,19 @@ SFACE_MODEL = os.path.join(
     "face_recognition_sface_2021dec.onnx"
 )
 
+FACE_DB_PATH = os.path.join(
+    PROJECT_ROOT,
+    "data",
+    "embeddings",
+    "me.npy"
+)
+
 def main():
-    camera = Camera(camera_id=0, width=640, height=480)
+    camera = Camera(
+        camera_id=0, 
+        width=640, 
+        height=480
+    )
 
     recognizer = FaceRecognizer(
         model_path=SFACE_MODEL
@@ -34,6 +50,31 @@ def main():
         input_size=(640, 480),
         score_threshold=0.8
     )
+
+    face_database = FaceDatabase(
+        embedding_path=FACE_DB_PATH,
+        name="me",
+        threshold=0.50
+    )
+
+    access_controller = AccessController(
+        open_duration=0.5,
+        cooldown=3.0
+    )
+
+    access_logger = AccessLogger(
+        os.path.join(PROJECT_ROOT, "data", "logs", "access.log"),
+        unknown_cooldown=3.0
+    )
+
+    status_store = StatusStore()
+
+    http_server = HttpServer(
+        status_store=status_store,
+        host="0.0.0.0",
+        port=8000
+    )
+    http_server.start()
 
     try:
         camera.open()
@@ -57,7 +98,52 @@ def main():
 
         for face in faces:
             embedding = recognizer.extract(frame, face)
-            print("Embedding shape:", embedding.shape)
+            result = face_database.match(embedding)
+            status_store.update_recognition(
+                result.name,
+                result.score,
+                result.authorized
+            )
+
+            if result.authorized:
+                opened = access_controller.open_door(
+                    result.name,
+                    result.score
+                )
+
+                if opened:
+                    status_store.set_door_state("opened")
+                    access_logger.write(
+                        result.name,
+                        result.score,
+                        authorized=True
+                    )
+                    status_store.set_door_state("closed")
+
+            if result.authorized:
+                opened = access_controller.open_door(
+                    result.name,
+                    result.score
+                )
+
+                if opened:
+                    access_logger.write(
+                        result.name,
+                        result.score,
+                        authorized=True
+                    )
+            else:
+                access_logger.write(
+                    result.name,
+                    result.score,
+                    authorized=False
+                )
+
+            print(
+                f"name={result.name}, "
+                f"score={result.score:.3f}, "
+                f"authorized={result.authorized}"
+            )
             break
         
         cv2.imshow("camera module test", frame)
