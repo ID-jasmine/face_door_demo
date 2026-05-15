@@ -1,6 +1,8 @@
 import os
 import sys
 
+import time
+
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, PROJECT_ROOT)
 
@@ -144,11 +146,16 @@ def main():
     # 3. 打开摄像头
     # =========================
 
+    camera_ok = True
+
     try:
         camera.open()
     except RuntimeError as e:
-        print("[ERROR]", e)
-        return
+        camera_ok = False
+        print("[WARN] camera.open() failed:", e)
+        print("[WARN] Web server will start without camera.")
+        # print("[ERROR]", e)
+        # return
 
     print("Config loaded.")
     print(f"Camera: id={camera_id}, width={camera_width}, height={camera_height}")
@@ -164,11 +171,16 @@ def main():
     # =========================
 
     while True:
+        if not camera_ok:
+            print("[WARN] Camera not available")
+            time.sleep(1)
+            continue
         frame = camera.read()
 
         if frame is None:
             print("[ERROR] Cannot read frame")
-            break
+            camera_ok = False
+            continue
 
         faces = detector.detect(frame)
         frame = detector.draw_faces(frame, faces)
@@ -215,7 +227,7 @@ def main():
             # 当前阶段只处理画面中检测到的第一张脸
             break
 
-        cv2.imshow("camera module test", frame)
+        #cv2.imshow("camera module test", frame)
 
         key = cv2.waitKey(1) & 0xFF
 
