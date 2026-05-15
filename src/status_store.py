@@ -15,6 +15,8 @@ class StatusStore:
         self.last_authorized = False
         self.last_event_time = "none"
         self.door_state = "closed"
+        self.camera_status = "not_found"
+        self.recognition_status = "idle"
 
         self._ensure_state_dir()
         self._save_to_file()
@@ -41,6 +43,8 @@ class StatusStore:
             "last_authorized": self.last_authorized,
             "last_event_time": self.last_event_time,
             "door_state": self.door_state,
+            "camera_status": self.camera_status,
+            "recognition_status": self.recognition_status,
         }
 
         with open(self.state_file, "w", encoding="utf-8") as f:
@@ -52,13 +56,51 @@ class StatusStore:
             self.last_score = float(score)
             self.last_authorized = bool(authorized)
             self.last_event_time = time.strftime("%Y-%m-%d %H:%M:%S")
-
             self._save_to_file()
 
     def set_door_state(self, state):
         with self.lock:
             self.door_state = state
+            self._save_to_file()
+    
+    def set_camera_status(self, status):
+        with self.lock:
+            self.camera_status = status
+            self._save_to_file()
 
+    def set_recognition_status(self, status):
+        with self.lock:
+            self.recognition_status = status
+            self._save_to_file()
+
+    def mock_open(self):
+        with self.lock:
+            self.last_name = "me"
+            self.last_score = 0.99
+            self.last_authorized = True
+            self.last_event_time = time.strftime("%Y-%m-%d %H:%M:%S")
+            self.door_state = "opened"
+            self.recognition_status = "recognized"
+            self._save_to_file()
+
+    def mock_unknown(self):
+        with self.lock:
+            self.last_name = "unknown"
+            self.last_score = 0.32
+            self.last_authorized = False
+            self.last_event_time = time.strftime("%Y-%m-%d %H:%M:%S")
+            self.door_state = "closed"
+            self.recognition_status = "unknown"
+            self._save_to_file()
+
+    def mock_reset(self):
+        with self.lock:
+            self.last_name = "none"
+            self.last_score = 0.0
+            self.last_authorized = False
+            self.last_event_time = "none"
+            self.door_state = "closed"
+            self.recognition_status = "idle"
             self._save_to_file()
 
     def to_dict(self):
@@ -69,4 +111,6 @@ class StatusStore:
                 "last_authorized": self.last_authorized,
                 "last_event_time": self.last_event_time,
                 "door_state": self.door_state,
+                "camera_status": self.camera_status,
+                "recognition_status": self.recognition_status,
             }

@@ -163,6 +163,33 @@ class HttpServer:
             """
             return Response(html, mimetype="text/html")
 
+        @self.app.route("/mock_open", methods=["GET"])
+        def mock_open():
+            self.status_store.mock_open()
+            return jsonify({
+                "ok": True,
+                "message": "mock authorized open",
+                "status": self.status_store.to_dict()
+            })
+
+        @self.app.route("/mock_unknown", methods=["GET"])
+        def mock_unknown():
+            self.status_store.mock_unknown()
+            return jsonify({
+                "ok": True,
+                "message": "mock unknown person",
+                "status": self.status_store.to_dict()
+            })
+
+        @self.app.route("/mock_reset", methods=["GET"])
+        def mock_reset():
+            self.status_store.mock_reset()
+            return jsonify({
+                "ok": True,
+                "message": "mock reset",
+                "status": self.status_store.to_dict()
+            })
+
     def start(self):
         thread = threading.Thread(
             target=self.app.run,
