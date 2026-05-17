@@ -35,3 +35,6 @@ http_server:
 
 state:
   file: "runtime/state.json"
+
+recognition:
+  interval: 0.5
