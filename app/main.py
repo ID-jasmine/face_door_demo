@@ -185,6 +185,8 @@ def main():
         faces = detector.detect(frame)
         frame = detector.draw_faces(frame, faces)
 
+        http_server.update_latest_frame(frame)
+        
         for face in faces:
             embedding = recognizer.extract(frame, face)
             result = face_database.match(embedding)
@@ -229,13 +231,13 @@ def main():
 
         #cv2.imshow("camera module test", frame)
 
-        key = cv2.waitKey(1) & 0xFF
+        # key = cv2.waitKey(1) & 0xFF
 
-        if key == ord("q") or key == 27:
-            break
+        # if key == ord("q") or key == 27:
+        #     break
 
     camera.release()
-    cv2.destroyAllWindows()
+    # cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":

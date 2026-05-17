@@ -1,5 +1,7 @@
-from flask import Flask, jsonify, Response
+from flask import Flask, jsonify, Response, request
 import threading
+import cv2
+import numpy as np
 
 
 class HttpServer:
@@ -8,8 +10,12 @@ class HttpServer:
         self.host = host
         self.port = port
 
+        self.latest_frame = None
+        self.latest_frame_lock = threading.Lock()
+
         self.app = Flask(__name__)
         self._setup_routes()
+
 
     def _setup_routes(self):
         @self.app.route("/status", methods=["GET"])
@@ -95,6 +101,13 @@ class HttpServer:
                 <div class="card">
                     <h1>Face Door Demo 状态面板</h1>
 
+                    <div class="row">
+                        <span class="label">实时画面</span>
+                        <span class="value">C270</span>
+                    </div>
+
+                    <img src="/video_feed" style="width:100%; border-radius:12px; margin-top:12px; margin-bottom:20px;">
+                    
                     <div class="row">
                         <span class="label">门状态</span>
                         <span id="door_state" class="value">loading...</span>
@@ -189,6 +202,85 @@ class HttpServer:
                 "message": "mock reset",
                 "status": self.status_store.to_dict()
             })
+
+        @self.app.route("/upload_frame", methods=["POST"])
+        def upload_frame():
+            file = request.files.get("frame")
+            if file is None:
+                return jsonify({"ok": False, "error": "no frame"}), 400
+
+            data = file.read()
+            img_array = np.frombuffer(data, dtype=np.uint8)
+            frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+
+            if frame is None:
+                return jsonify({"ok": False, "error": "decode failed"}), 400
+
+            with self.latest_frame_lock:
+                self.latest_frame = frame
+
+            print("[UPLOAD] latest frame updated:", frame.shape)
+
+            return jsonify({
+                "ok": True,
+                "shape": frame.shape
+            })
+
+        @self.app.route("/latest_frame.jpg", methods=["GET"])
+        def latest_frame_jpg():
+            with self.latest_frame_lock:
+                if self.latest_frame is None:
+                    return jsonify({
+                        "ok": False,
+                        "error": "no frame yet"
+                    }), 404
+
+                frame = self.latest_frame.copy()
+
+            ok, buffer = cv2.imencode(".jpg", frame)
+            if not ok:
+                return jsonify({
+                    "ok": False,
+                    "error": "encode failed"
+                }), 500
+
+            return Response(buffer.tobytes(), mimetype="image/jpeg")
+
+        @self.app.route("/video_feed", methods=["GET"])
+        def video_feed():
+            def generate():
+                while True:
+                    with self.latest_frame_lock:
+                        if self.latest_frame is None:
+                            frame = None
+                        else:
+                            frame = self.latest_frame.copy()
+
+                    if frame is None:
+                        continue
+
+                    ok, buffer = cv2.imencode(".jpg", frame)
+                    if not ok:
+                        continue
+
+                    jpg = buffer.tobytes()
+
+                    yield (
+                        b"--frame\r\n"
+                        b"Content-Type: image/jpeg\r\n\r\n" + jpg + b"\r\n"
+                    )
+
+            return Response(
+                generate(),
+                mimetype="multipart/x-mixed-replace; boundary=frame"
+            )
+
+    def update_latest_frame(self, frame):
+        if frame is None:
+            return
+
+        with self.latest_frame_lock:
+            self.latest_frame = frame.copy()
 
     def start(self):
         thread = threading.Thread(
