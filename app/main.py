@@ -6,13 +6,13 @@ import threading
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, PROJECT_ROOT)
 
-from src.config import load_config, get_config_value
 
+from src.config import load_config, get_config_value
 from src.camera import Camera
 from src.face_detector import FaceDetector
 from src.face_recognizer import FaceRecognizer
 from src.face_database import FaceDatabase
-from src.access_controller import AccessController
+from src.access_controller import AccessController,LedGPIO
 from src.access_logger import AccessLogger
 from src.status_store import StatusStore
 from src.http_server import HttpServer
@@ -54,9 +54,7 @@ class FrameBuffer:
 def camera_capture_loop(
     camera,
     raw_frame_buffer,
-    http_server,
-    stop_event,
-    video_interval=0.1
+    stop_event
 ):
     """
     摄像头采集线程。
@@ -64,7 +62,6 @@ def camera_capture_loop(
     只负责：
     1. 持续读取摄像头
     2. 保存最新原始帧给识别线程
-    3. 定期把原始画面推给网页
 
     注意：
     这里不做人脸检测。
@@ -72,8 +69,6 @@ def camera_capture_loop(
     这里不画框。
     """
     print("[THREAD] Camera capture thread started.")
-
-    last_video_update_time = 0
 
     while not stop_event.is_set():
         frame = camera.read()
@@ -86,36 +81,10 @@ def camera_capture_loop(
         # 保存最新原始帧，给识别线程使用
         raw_frame_buffer.set(frame)
 
-        # 网页视频显示原始画面，不画框
-        now = time.time()
-        if now - last_video_update_time >= video_interval:
-            last_video_update_time = now
-            http_server.update_latest_frame(frame)
-
         # 防止采集线程空转吃满 CPU
         time.sleep(0.005)
 
     print("[THREAD] Camera capture thread stopped.")
-
-
-def open_door_worker(access_controller, access_logger, status_store, name, score):
-    """
-    开门线程。
-
-    避免 open_door 里面的 sleep 阻塞识别线程。
-    """
-    opened = access_controller.open_door(name, score)
-
-    if opened:
-        status_store.set_door_state("opened")
-
-        access_logger.write(
-            name,
-            score,
-            authorized=True
-        )
-
-        status_store.set_door_state("closed")
 
 
 def recognition_loop(
@@ -147,6 +116,7 @@ def recognition_loop(
     print("[THREAD] Recognition thread started.")
 
     last_recognition_time = 0
+    last_face_present = False
 
     while not stop_event.is_set():
         now = time.time()
@@ -166,10 +136,26 @@ def recognition_loop(
         try:
             faces = detector.detect(frame)
 
-            if len(faces) == 0:
+            face_present = len(faces) > 0
+
+            if not face_present:
+                if last_face_present:
+                    status_store.update_recognition(
+                        "none",
+                        0.0,
+                        False
+                    )
+
+                access_controller.set_authorized(False)
+                status_store.set_door_state("closed")
+
                 if hasattr(status_store, "set_recognition_status"):
                     status_store.set_recognition_status("idle")
+
+                last_face_present = False
                 continue
+
+            last_face_present = True
 
             # 当前阶段只处理第一张脸
             face = faces[0]
@@ -184,18 +170,19 @@ def recognition_loop(
             )
 
             if result.authorized:
-                threading.Thread(
-                    target=open_door_worker,
-                    args=(
-                        access_controller,
-                        access_logger,
-                        status_store,
+                changed = access_controller.set_authorized(True)
+                status_store.set_door_state("opened")
+
+                if changed:
+                    access_logger.write(
                         result.name,
-                        result.score
-                    ),
-                    daemon=True
-                ).start()
+                        result.score,
+                        authorized=True
+                    )
             else:
+                access_controller.set_authorized(False)
+                status_store.set_door_state("closed")
+
                 access_logger.write(
                     result.name,
                     result.score,
@@ -287,13 +274,6 @@ def main():
         0.5
     )
 
-    # 网页视频刷新频率：默认 0.1 秒更新一次原始画面，大约 10 FPS
-    video_interval = get_config_value(
-        config,
-        "video.interval",
-        0.1
-    )
-
     # =========================
     # 2. 创建各个模块对象
     # =========================
@@ -321,7 +301,7 @@ def main():
     )
 
     access_controller = AccessController(
-        open_duration=open_duration,
+        gpio=LedGPIO(led_name="status_led", active_high=True),
         cooldown=cooldown
     )
 
@@ -366,7 +346,6 @@ def main():
     print(f"SFace model: {sface_model}")
     print(f"Face DB: {face_db_path}")
     print(f"Recognition interval: {recognition_interval}s")
-    print(f"Video update interval: {video_interval}s")
     print("Camera opened.")
     print("Face detector loaded.")
     print("HTTP server started.")
@@ -384,12 +363,8 @@ def main():
         args=(
             camera,
             raw_frame_buffer,
-            http_server,
             stop_event
         ),
-        kwargs={
-            "video_interval": video_interval
-        },
         daemon=True
     )
 
@@ -426,6 +401,11 @@ def main():
         stop_event.set()
         time.sleep(0.5)
     finally:
+        try:
+            access_controller.set_authorized(False)
+        except Exception as e:
+            print("[WARN] failed to turn off LED:", e)
+
         camera.release()
         print("[MAIN] Camera released.")
         print("[MAIN] Exit.")
