@@ -1,9 +1,12 @@
 /models
-
 /data
-
 /.venv
-
 /src/__pycache__
-
 /runtime
+
+# C++ build
+cpp/build/
+*.o
+*.so
+*.a
+*.out
